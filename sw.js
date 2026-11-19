@@ -1,5 +1,5 @@
 // Garde la page du jeu en mémoire sur le téléphone pour qu'elle s'ouvre sans Internet.
-const CACHE = "cyberrush-5f5018b613";
+const CACHE = "cyberrush-b2afbd4191";
 const PAGE = new URL("./index.html", self.registration.scope).href;
 
 self.addEventListener("install", (event) => {
