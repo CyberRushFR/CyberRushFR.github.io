@@ -160,6 +160,7 @@
   let lastW = window.innerWidth;
   window.addEventListener("resize", () => { if (window.innerWidth !== lastW) { lastW = window.innerWidth; draw(); } });
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 })();
 </script>
 </body>
