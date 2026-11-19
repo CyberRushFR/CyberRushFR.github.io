@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Cyber quiz</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap">
+<style>
+  :root {
+    --bg: #000000; --rain: #1fdc3f; --glow: #00ff3c; --text: #eafff0; --label: #7dff9a; --panel: rgba(0, 0, 0, .88);
+    --good: #1fdc3f; --good-ink: #001a06; --bad: #ff5a4f;
+    --font-mono: "Share Tech Mono", Consolas, "Courier New", monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { min-height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text); font-family: var(--font-mono);
+    display: flex; min-height: 100vh; min-height: 100dvh;
+    padding: max(24px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(24px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  main {
+    position: relative; max-width: 640px; width: 100%; margin: auto; text-align: center;
+    background: var(--panel); border: 1px solid var(--rain); border-radius: 4px;
+    padding: 24px 18px; box-shadow: 0 0 22px rgba(0, 255, 60, .45), inset 0 0 18px rgba(0, 255, 60, .12);
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .label { font-size: .85rem; letter-spacing: .28em; text-transform: uppercase; color: var(--label); }
+  h1 {
+    margin: 0; font-size: clamp(1.2rem, 4.8vw, 1.8rem); font-weight: 400; line-height: 1.3;
+    text-wrap: balance; overflow-wrap: anywhere; text-shadow: 0 0 10px var(--glow), 0 0 2px var(--glow);
+  }
+  #choices { display: flex; flex-direction: column; gap: 10px; }
+  .choice {
+    font: inherit; font-size: 1rem; line-height: 1.35; color: var(--text); text-align: left; cursor: pointer;
+    background: var(--bg); border: 1px solid var(--rain); border-radius: 4px; padding: 11px 12px;
+    display: flex; gap: 10px; align-items: baseline; overflow-wrap: anywhere;
+  }
+  .choice b { color: var(--label); font-weight: 400; flex: none; }
+  .choice span { min-width: 0; }
+  .choice:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  .choice:disabled { cursor: default; opacity: .6; }
+  .choice.good { background: var(--good); border-color: var(--good); color: var(--good-ink); opacity: 1; }
+  .choice.good b { color: var(--good-ink); }
+  .choice.bad { border-color: var(--bad); color: var(--bad); opacity: 1; }
+  .choice.bad b { color: var(--bad); }
+  #verdict { margin: 0; min-height: 1.4em; letter-spacing: .12em; text-transform: uppercase; }
+  #verdict.good { color: var(--good); }
+  #verdict.bad { color: var(--bad); }
+</style>
+</head>
+<body>
+<canvas id="rain" aria-hidden="true"></canvas>
+<main>
+  <div class="label" id="label">Cyber quiz</div>
+  <h1 id="question">Scannez le QR code d'une carte pour afficher sa question.</h1>
+  <div id="choices" hidden></div>
+  <p id="verdict" hidden aria-live="polite"></p>
+</main>
+<script>
+(() => {
+  // Chaque carte : [question, [bonne réponse, mauvaise 1, mauvaise 2, mauvaise 3]]. L'ordre des choix est mélangé à l'affichage.
+  const QUESTIONS = {"q001": ["Qu'est-ce que le phishing (hameçonnage) ?", ["Une arnaque où l'attaquant se fait passer pour un tiers de confiance pour voler des données", "Un logiciel qui chiffre les fichiers contre une rançon", "Une attaque qui sature un serveur de requêtes", "Une technique pour deviner un mot de passe par essais successifs"]], "q002": ["Que signifie le sigle « 2FA » et à quoi sert-il ?", ["Authentification à deux facteurs : une seconde preuve en plus du mot de passe", "Deux mots de passe identiques sur deux comptes", "Un chiffrement appliqué deux fois aux fichiers", "Un pare-feu à deux niveaux de filtrage"]], "q003": ["Quelles sont les caractéristiques d'un mot de passe robuste ?", ["Long, unique et mêlant lettres, chiffres et symboles", "Court et facile à retenir", "Le même sur tous ses comptes", "Basé sur sa date de naissance"]], "q004": ["Qu'est-ce qu'un ransomware (rançongiciel) ?", ["Un logiciel qui chiffre les fichiers et exige une rançon", "Un faux e-mail qui imite une banque", "Un programme qui affiche des publicités", "Un outil qui accélère l'ordinateur"]], "q005": ["Quelle est la différence entre HTTP et HTTPS ?", ["HTTPS chiffre les échanges, HTTP les transmet en clair", "HTTPS est plus rapide que HTTP", "HTTP est réservé aux sites gouvernementaux", "HTTPS fonctionne sans connexion Internet"]], "q006": ["À quoi sert un pare-feu (firewall) ?", ["Filtrer le trafic réseau entrant et sortant", "Sauvegarder les fichiers automatiquement", "Chiffrer les mots de passe", "Supprimer les virus déjà installés"]], "q007": ["Que désigne la triade « CIA » (ou DIC en français) en sécurité informatique ?", ["Confidentialité, Intégrité, Disponibilité", "Contrôle, Identification, Authentification", "Chiffrement, Internet, Antivirus", "Confiance, Intrusion, Alerte"]], "q008": ["Qu'est-ce qu'une attaque par force brute ?", ["Essayer toutes les combinaisons possibles jusqu'à trouver la bonne", "Détruire physiquement un serveur", "Envoyer un e-mail piégé à la victime", "Intercepter une communication Wi-Fi"]], "q009": ["Qu'est-ce que l'ingénierie sociale ?", ["Manipuler une personne pour obtenir des informations ou une action", "Concevoir des réseaux sociaux sécurisés", "Programmer un virus informatique", "Analyser le trafic d'un réseau"]], "q010": ["À quoi sert un VPN ?", ["Créer un tunnel chiffré et masquer son adresse IP", "Augmenter la vitesse de sa connexion", "Bloquer les virus et les rançongiciels", "Stocker ses mots de passe"]], "q011": ["Pourquoi faut-il installer rapidement les mises à jour de sécurité ?", ["Elles corrigent des failles que les attaquants peuvent exploiter", "Elles libèrent de l'espace disque", "Elles changent seulement l'apparence du logiciel", "Elles sont exigées par la loi"]], "q012": ["Qu'est-ce qu'une attaque DDoS ?", ["Saturer un serveur de requêtes venant de nombreuses machines", "Voler une base de données de mots de passe", "Chiffrer les fichiers d'une entreprise", "Usurper l'identité d'un dirigeant"]], "q013": ["Quelle est la différence entre chiffrement symétrique et asymétrique ?", ["Symétrique : une seule clé ; asymétrique : une clé publique et une clé privée", "Symétrique : pour les textes ; asymétrique : pour les images", "Symétrique : gratuit ; asymétrique : payant", "Symétrique : deux clés ; asymétrique : aucune clé"]], "q014": ["Qu'est-ce qu'une injection SQL ?", ["Insérer du code SQL dans un champ de saisie mal protégé", "Installer une base de données sur un serveur", "Envoyer des milliers de requêtes pour saturer un site", "Deviner un mot de passe par essais successifs"]], "q015": ["Qu'est-ce que la règle de sauvegarde « 3-2-1 » ?", ["3 copies, 2 supports différents, 1 copie hors site", "3 mots de passe, 2 comptes, 1 antivirus", "3 sauvegardes par jour, 2 par semaine, 1 par mois", "3 disques, 2 ordinateurs, 1 utilisateur"]], "q016": ["Qu'est-ce qu'une vulnérabilité « zero-day » ?", ["Une faille inconnue de l'éditeur, sans correctif disponible", "Une faille corrigée le jour même", "Un virus qui s'active à minuit", "Un logiciel sans aucune vulnérabilité"]], "q017": ["Quel est le rôle d'une fonction de hachage pour le stockage des mots de passe ?", ["Stocker une empreinte irréversible au lieu du mot de passe en clair", "Compresser le mot de passe pour gagner de la place", "Chiffrer le mot de passe pour pouvoir le relire plus tard", "Envoyer le mot de passe par e-mail"]], "q018": ["Qu'est-ce qu'une attaque de l'homme du milieu (Man-in-the-Middle) ?", ["L'attaquant s'intercale entre deux parties pour écouter ou modifier leurs échanges", "L'attaquant devine le mot de passe par essais", "L'attaquant sature le serveur de requêtes", "L'attaquant vole physiquement l'ordinateur"]], "q019": ["Que signifie le principe du « moindre privilège » ?", ["Donner uniquement les droits strictement nécessaires", "Donner les droits administrateur à tous", "Supprimer les comptes peu utilisés", "Changer de mot de passe chaque jour"]], "q020": ["Quels indices permettent de repérer un e-mail frauduleux ?", ["Expéditeur suspect, ton urgent, lien trompeur", "Un logo de l'entreprise bien visible", "Un message reçu en journée", "Une signature avec un numéro de téléphone"]], "q021": ["Qu'est-ce qu'un cheval de Troie ?", ["Un programme malveillant caché dans un logiciel d'apparence légitime", "Un virus qui détruit l'écran", "Un pare-feu matériel", "Un outil officiel de sauvegarde"]], "q022": ["Qu'est-ce qu'un ver informatique ?", ["Un programme malveillant qui se propage seul d'une machine à l'autre", "Un bug d'affichage du navigateur", "Un logiciel de nettoyage de disque", "Un câble réseau défectueux"]], "q023": ["Qu'est-ce qu'un keylogger ?", ["Un programme qui enregistre tout ce qui est tapé au clavier", "Un gestionnaire de clés de chiffrement", "Un clavier anti-éclaboussures", "Un outil qui bloque certaines touches"]], "q024": ["Qu'est-ce qu'un spyware (logiciel espion) ?", ["Un logiciel qui collecte des informations à l'insu de l'utilisateur", "Un antivirus gratuit", "Un logiciel de retouche photo", "Un outil de chiffrement de disque"]], "q025": ["Qu'est-ce qu'un adware ?", ["Un logiciel qui affiche des publicités non désirées", "Un logiciel qui chiffre les fichiers", "Un pilote de carte réseau", "Un logiciel de comptabilité"]], "q026": ["Qu'est-ce qu'un rootkit ?", ["Des outils qui cachent la présence d'un attaquant sur un système", "Le compte administrateur de Linux", "Un kit de réparation de Windows", "Une clé USB de démarrage"]], "q027": ["Qu'est-ce qu'un botnet ?", ["Un réseau de machines infectées contrôlées à distance", "Un robot conversationnel", "Le réseau privé d'une entreprise", "Un moteur de recherche"]], "q028": ["Qu'est-ce qu'une porte dérobée (backdoor) ?", ["Un accès caché qui contourne l'authentification normale", "La sortie de secours d'un datacenter", "Un port réseau toujours fermé", "Une sauvegarde cachée"]], "q029": ["Qu'est-ce qu'un malware « sans fichier » (fileless) ?", ["Un malware qui s'exécute en mémoire sans s'installer sur le disque", "Un virus qui supprime tous les fichiers", "Un e-mail sans pièce jointe", "Un logiciel qui ne fait rien"]], "q030": ["Comment un ransomware entre-t-il le plus souvent dans une entreprise ?", ["Par des e-mails piégés et des failles non corrigées", "Par les ondes radio FM", "Par l'écran de l'ordinateur", "Uniquement par des clés USB neuves"]], "q031": ["Qu'est-ce que le spear phishing ?", ["Un hameçonnage ciblé et personnalisé visant une personne précise", "Un phishing envoyé au hasard à des millions de personnes", "Une attaque contre les sites de pêche", "Un filtre anti-spam"]], "q032": ["Qu'est-ce que le smishing ?", ["Un hameçonnage par SMS", "Un hameçonnage par courrier postal", "Une messagerie chiffrée", "Un virus pour imprimante"]], "q033": ["Qu'est-ce que le vishing ?", ["Un hameçonnage par appel téléphonique", "Un hameçonnage par vidéo", "Une attaque visant les vitrines de magasins", "Un antivirus à commande vocale"]], "q034": ["Qu'est-ce que la fraude au président (faux dirigeant) ?", ["Un escroc se fait passer pour un dirigeant pour obtenir un virement urgent", "Un vote électronique truqué", "Un virus qui cible les PDG", "Le piratage d'un site gouvernemental"]], "q035": ["Qu'est-ce que le typosquatting ?", ["Enregistrer un nom de domaine proche d'un site connu pour piéger les fautes de frappe", "Taper très vite au clavier", "Corriger automatiquement les fautes", "Occuper un local sans autorisation"]], "q036": ["Qu'est-ce qu'une attaque par dictionnaire ?", ["Tester des mots de passe courants issus d'une liste", "Traduire un site dans plusieurs langues", "Voler un dictionnaire numérique", "Saturer un serveur de mots"]], "q037": ["Qu'est-ce que le credential stuffing ?", ["Réutiliser des identifiants volés sur d'autres sites", "Remplir automatiquement ses propres formulaires", "Créer des mots de passe très longs", "Ranger ses mots de passe dans un coffre"]], "q038": ["Qu'est-ce que le shoulder surfing ?", ["Regarder par-dessus l'épaule de quelqu'un pour voir ses codes", "Naviguer sur un Wi-Fi public", "Un sport de glisse", "Une méthode de chiffrement"]], "q039": ["Qu'est-ce qu'une clé USB piégée laissée à l'abandon ?", ["Une clé déposée exprès pour infecter celui qui la branche", "Une clé USB chiffrée", "Une clé USB très rapide", "Une clé de voiture connectée"]], "q040": ["Qu'est-ce que le tailgating en sécurité physique ?", ["Entrer dans un bâtiment sécurisé en suivant une personne autorisée", "Suivre quelqu'un sur les réseaux sociaux", "Se garer trop près d'une voiture", "Intercepter un e-mail"]], "q041": ["Qu'est-ce qu'une menace interne ?", ["Un risque venant d'une personne de l'organisation", "Un virus gravé dans la carte mère", "Une panne de courant", "Une attaque venant d'un autre pays"]], "q042": ["Qu'est-ce qu'une APT (Advanced Persistent Threat) ?", ["Une attaque ciblée, discrète et prolongée menée par un groupe organisé", "Un antivirus professionnel", "Une application de prise de notes", "Une panne réseau qui dure"]], "q043": ["Qu'est-ce qu'une attaque XSS (Cross-Site Scripting) ?", ["Injecter un script malveillant dans une page vue par d'autres utilisateurs", "Saturer un site de requêtes", "Voler un câble réseau", "Deviner le mot de passe administrateur"]], "q044": ["Qu'est-ce qu'une attaque CSRF ?", ["Faire exécuter une action à un utilisateur connecté, à son insu", "Chiffrer les cookies d'un site", "Copier le design d'un site", "Bloquer les publicités"]], "q045": ["À quoi sert un cookie sur un site web ?", ["Stocker de petites informations dans le navigateur, comme une session", "Accélérer le processeur", "Bloquer les virus", "Chiffrer le disque dur"]], "q046": ["Pourquoi le vol d'un cookie de session est-il dangereux ?", ["Il permet de prendre la session de la victime sans son mot de passe", "Il efface l'historique", "Il ralentit le navigateur", "Il désactive le Wi-Fi"]], "q047": ["Que garantit le cadenas dans la barre d'adresse ?", ["La connexion au site est chiffrée", "Le site est forcément honnête", "Le site est gratuit", "Le site est hébergé en France"]], "q048": ["Qu'est-ce qu'un certificat TLS ?", ["Un document numérique qui prouve l'identité d'un site et permet le chiffrement", "Un diplôme d'informaticien", "Une licence de logiciel", "Le mot de passe du Wi-Fi"]], "q049": ["Qu'est-ce qu'un WAF ?", ["Un pare-feu applicatif qui filtre les attaques visant les sites web", "Un format d'image", "Un réseau Wi-Fi rapide", "Un logiciel de messagerie"]], "q050": ["Qu'est-ce que l'OWASP Top 10 ?", ["La liste des risques de sécurité les plus critiques des applications web", "Le classement des meilleurs antivirus", "Les 10 pirates les plus recherchés", "Le palmarès des navigateurs"]], "q051": ["Pourquoi vérifier côté serveur les données saisies par les utilisateurs ?", ["Pour bloquer les injections et les données malveillantes", "Pour rendre le site plus joli", "Pour économiser de l'électricité", "Pour améliorer le référencement"]], "q052": ["Qu'est-ce qu'une adresse IP ?", ["L'identifiant numérique d'un appareil sur un réseau", "Le mot de passe du routeur", "Le nom du propriétaire de l'ordinateur", "Une adresse e-mail"]], "q053": ["À quoi sert le DNS ?", ["Traduire un nom de domaine en adresse IP", "Chiffrer les e-mails", "Bloquer les virus", "Accélérer la carte graphique"]], "q054": ["Qu'est-ce que le DNS spoofing ?", ["Falsifier les réponses DNS pour rediriger vers un faux site", "Changer de fournisseur Internet", "Accélérer le DNS", "Supprimer un nom de domaine"]], "q055": ["Pourquoi un Wi-Fi public est-il risqué ?", ["Les échanges peuvent être interceptés ou le point d'accès peut être faux", "Il vide seulement la batterie", "Il est toujours payant", "Il bloque tous les sites en HTTPS"]], "q056": ["Qu'est-ce qu'un « evil twin » en Wi-Fi ?", ["Un faux point d'accès qui imite un réseau légitime", "Un routeur à deux antennes", "Un double du mot de passe", "Un câble réseau doublé"]], "q057": ["Quelle sécurité Wi-Fi est recommandée aujourd'hui ?", ["WPA3, ou WPA2 à défaut", "WEP", "Aucune, un réseau ouvert", "FTP"]], "q058": ["Qu'est-ce qu'un port réseau ?", ["Un numéro qui identifie un service sur une machine, comme 443 pour HTTPS", "Une prise électrique", "Un câble USB", "Un port maritime"]], "q059": ["Qu'est-ce qu'un scan de ports ?", ["Tester les ports d'une machine pour trouver les services ouverts", "Numériser un document", "Nettoyer les ports USB", "Mesurer le débit Internet"]], "q060": ["Qu'est-ce qu'une DMZ en réseau ?", ["Une zone isolée qui héberge les serveurs accessibles depuis Internet", "Une zone sans Wi-Fi", "Un type de câble", "Le mode avion"]], "q061": ["Qu'est-ce qu'un IDS ?", ["Un système qui détecte les intrusions et le trafic suspect", "Un identifiant de session", "Un disque dur externe", "Un langage de programmation"]], "q062": ["Quelle est la différence entre un IDS et un IPS ?", ["L'IDS détecte et alerte, l'IPS peut aussi bloquer", "L'IDS est pour Windows, l'IPS pour Mac", "Il n'y a aucune différence", "L'IPS sert à imprimer"]], "q063": ["Qu'est-ce que la segmentation réseau ?", ["Diviser un réseau en zones séparées pour limiter la propagation d'une attaque", "Couper Internet la nuit", "Partager son Wi-Fi avec les voisins", "Augmenter le débit"]], "q064": ["À quel service correspond généralement le port 22 ?", ["SSH, l'accès à distance sécurisé", "L'impression réseau", "Les jeux vidéo en ligne", "Le Wi-Fi"]], "q065": ["Pourquoi remplacer Telnet par SSH ?", ["Telnet transmet tout en clair, SSH chiffre la connexion", "Telnet est payant", "SSH est plus coloré", "Telnet ne marche qu'en Wi-Fi"]], "q066": ["Qu'est-ce qu'un gestionnaire de mots de passe ?", ["Un coffre chiffré qui stocke et génère les mots de passe", "Un carnet papier partagé", "Un logiciel qui devine les mots de passe", "Le service client d'un site"]], "q067": ["Qu'est-ce qu'une passkey (clé d'accès) ?", ["Une connexion sans mot de passe basée sur une paire de clés cryptographiques", "Un mot de passe très long", "Un badge de cantine", "Une clé de voiture"]], "q068": ["Quels sont les trois types de facteurs d'authentification ?", ["Ce que je sais, ce que je possède, ce que je suis", "Nom, prénom, âge", "Identifiant, e-mail, téléphone", "Matin, midi, soir"]], "q069": ["Pourquoi le SMS est-il le second facteur le moins sûr ?", ["Il peut être intercepté ou détourné par un échange de carte SIM", "Il coûte trop cher", "Il est trop long à lire", "Il ne fonctionne qu'à l'étranger"]], "q070": ["Qu'est-ce que le SIM swapping ?", ["Faire transférer le numéro de la victime sur une carte SIM de l'attaquant", "Échanger son téléphone avec un ami", "Changer d'opérateur", "Utiliser deux cartes SIM"]], "q071": ["Qu'est-ce que le SSO (Single Sign-On) ?", ["Une seule connexion donne accès à plusieurs applications", "Un mot de passe différent par application", "Une authentification à trois facteurs", "Un antivirus"]], "q072": ["Qu'est-ce que l'authentification biométrique ?", ["Se connecter avec une caractéristique physique, comme l'empreinte ou le visage", "Mesurer la vitesse du processeur", "Un mot de passe écrit sur papier", "Un code envoyé par courrier"]], "q073": ["Peut-on partager son mot de passe avec un collègue de confiance ?", ["Non, un mot de passe est strictement personnel", "Oui, si c'est un ami", "Oui, par e-mail", "Oui, sur un post-it"]], "q074": ["Qu'est-ce qu'une phrase de passe ?", ["Un mot de passe formé de plusieurs mots, long et facile à retenir", "Une phrase dite à l'accueil", "Le slogan d'un site", "Une question secrète"]], "q075": ["Pourquoi verrouiller sa session en quittant son poste ?", ["Pour que personne n'utilise son compte en son absence", "Pour économiser l'écran", "Pour accélérer les mises à jour", "Pour libérer de la mémoire"]], "q076": ["Qu'est-ce que le chiffrement ?", ["Rendre des données illisibles sans la clé de déchiffrement", "Compresser un fichier", "Supprimer définitivement des données", "Compter les fichiers"]], "q077": ["Qu'est-ce qu'AES ?", ["Un algorithme de chiffrement symétrique standard", "Un antivirus", "Un protocole Wi-Fi", "Un système d'exploitation"]], "q078": ["Qu'est-ce qu'une signature numérique ?", ["Une preuve cryptographique de l'auteur et de l'intégrité d'un document", "Le scan d'une signature manuscrite", "Un pseudonyme", "Un filigrane sur une image"]], "q079": ["Qu'est-ce que le chiffrement de bout en bout ?", ["Seuls l'expéditeur et le destinataire peuvent lire les messages", "Le serveur lit tous les messages", "Seule la fin du message est chiffrée", "Le disque dur est chiffré"]], "q080": ["Pourquoi MD5 n'est-il plus recommandé ?", ["Il est vulnérable aux collisions", "Il est trop lent", "Il est payant", "Il ne fonctionne qu'en anglais"]], "q081": ["Qu'est-ce qu'un « sel » en hachage de mots de passe ?", ["Une valeur aléatoire ajoutée avant le hachage pour rendre chaque empreinte unique", "Un ingrédient de recette", "Un mot de passe de secours", "Un type de virus"]], "q082": ["Qu'est-ce qu'une autorité de certification ?", ["Un organisme de confiance qui délivre et signe les certificats", "Un service de police", "Un éditeur d'antivirus", "Un fournisseur Internet"]], "q083": ["Que vérifie l'empreinte (hash) fournie avec un fichier téléchargé ?", ["Que le fichier n'a pas été modifié", "Que le fichier est gratuit", "Que le fichier est rapide", "Que le fichier est léger"]], "q084": ["Qu'est-ce que la stéganographie ?", ["Cacher un message à l'intérieur d'un autre fichier, comme une image", "Écrire en sténo", "Chiffrer avec deux clés", "Compresser une vidéo"]], "q085": ["Pourquoi chiffrer le disque d'un ordinateur portable ?", ["Pour protéger les données en cas de vol ou de perte", "Pour gagner de la place", "Pour accélérer le démarrage", "Pour éviter les mises à jour"]], "q086": ["Que faire quand on reçoit un e-mail suspect ?", ["Ne pas cliquer, le signaler et le supprimer", "Répondre pour demander qui c'est", "Ouvrir la pièce jointe pour vérifier", "Le transférer à tous ses contacts"]], "q087": ["Comment vérifier un lien avant de cliquer ?", ["Survoler le lien pour voir l'adresse réelle", "Cliquer deux fois rapidement", "Regarder la couleur du lien", "Faire confiance au texte affiché"]], "q088": ["Pourquoi installer les applications uniquement depuis les magasins officiels ?", ["Elles y sont contrôlées, ce qui réduit le risque de malware", "Elles y sont toujours gratuites", "Elles y sont plus colorées", "Elles n'ont jamais besoin de mises à jour"]], "q089": ["Que faire en premier si un ordinateur est touché par un ransomware ?", ["Le déconnecter du réseau et prévenir le service informatique", "Payer la rançon immédiatement", "Éteindre seulement l'écran", "Continuer à travailler"]], "q090": ["Faut-il payer la rançon d'un ransomware ?", ["Non : rien ne garantit la récupération des données", "Oui, toujours", "Oui, si la somme est faible", "Oui, par carte bancaire"]], "q091": ["Pourquoi limiter ses informations personnelles sur les réseaux sociaux ?", ["Elles peuvent servir à l'ingénierie sociale ou à deviner des mots de passe", "Elles ralentissent le téléphone", "Elles coûtent de l'argent", "Elles empêchent les mises à jour"]], "q092": ["Qu'est-ce que la défense en profondeur ?", ["Empiler plusieurs couches de protection indépendantes", "Installer un seul antivirus très puissant", "Enterrer les serveurs", "Utiliser un seul mot de passe très long"]], "q093": ["À quoi sert un antivirus ?", ["Détecter et bloquer les logiciels malveillants", "Accélérer Internet", "Remplacer les mises à jour", "Chiffrer les e-mails"]], "q094": ["Pourquoi faut-il tester ses sauvegardes ?", ["Pour être sûr de pouvoir restaurer les données le jour venu", "Pour les rendre plus légères", "Pour les supprimer plus vite", "Ce n'est pas utile"]], "q095": ["Qu'est-ce que le « Shadow IT » ?", ["L'usage d'outils informatiques non validés par l'entreprise", "Le mode sombre d'un logiciel", "Un antivirus caché", "Une panne de nuit"]], "q096": ["Qu'est-ce qu'une vulnérabilité ?", ["Une faiblesse exploitable dans un système", "Une attaque réussie", "Un antivirus", "Une sauvegarde"]], "q097": ["Qu'est-ce qu'un exploit en cybersécurité ?", ["Un code ou une méthode qui tire parti d'une vulnérabilité", "Une performance sportive", "Un correctif de sécurité", "Un pare-feu"]], "q098": ["Qu'est-ce qu'un patch ?", ["Une mise à jour qui corrige un bug ou une faille", "Un virus", "Un câble réseau", "Un mot de passe temporaire"]], "q099": ["Qu'est-ce qu'un identifiant CVE ?", ["Un numéro public unique attribué à une vulnérabilité connue", "Un curriculum vitae", "Un antivirus", "Un type de câble"]], "q100": ["Qu'est-ce qu'un pentest (test d'intrusion) ?", ["Une attaque simulée et autorisée pour trouver des failles", "Une attaque illégale", "Un test d'écran", "Un concours de dessin"]], "q101": ["Qu'est-ce qu'un hacker « white hat » ?", ["Un hacker éthique qui sécurise les systèmes avec autorisation", "Un pirate qui vole des données", "Un développeur web débutant", "Un hacker qui porte un chapeau blanc"]], "q102": ["Qu'est-ce qu'un SOC ?", ["Un centre qui surveille et traite les incidents de sécurité", "Un réseau social", "Un type de processeur", "Un antivirus gratuit"]], "q103": ["Quelle est la différence entre authentification et autorisation ?", ["L'authentification vérifie qui on est, l'autorisation ce qu'on a le droit de faire", "C'est exactement la même chose", "L'autorisation se fait toujours avant", "L'authentification gère les droits d'accès"]], "q104": ["Qu'est-ce que le RGPD ?", ["Le règlement européen sur la protection des données personnelles", "Un antivirus européen", "Une norme Wi-Fi", "Un protocole de chiffrement"]], "q105": ["Qu'est-ce que l'ANSSI en France ?", ["L'agence nationale chargée de la sécurité des systèmes d'information", "Un fournisseur Internet", "Un éditeur d'antivirus", "Un réseau social"]], "q106": ["Quel site officiel aide les victimes de cybermalveillance en France ?", ["cybermalveillance.gouv.fr", "Wikipédia", "Un forum anonyme", "Le site de son opérateur téléphonique"]]};
+  const $ = (id) => document.getElementById(id);
+
+  function shuffled(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function showChoices(choices) {
+    const good = choices[0];
+    const box = $("choices"), verdict = $("verdict");
+    const buttons = shuffled(choices).map((text, i) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "choice";
+      const letter = document.createElement("b");
+      letter.textContent = "ABCD"[i] + ".";
+      const label = document.createElement("span");
+      label.textContent = text;
+      b.append(letter, label);
+      b.addEventListener("click", () => {
+        const ok = text === good;
+        buttons.forEach((x) => { x.disabled = true; if (x.lastChild.textContent === good) x.classList.add("good"); });
+        if (!ok) b.classList.add("bad");
+        verdict.textContent = ok ? "Bonne réponse" : "Mauvaise réponse";
+        verdict.className = ok ? "good" : "bad";
+        verdict.hidden = false;
+      });
+      return b;
+    });
+    box.replaceChildren(...buttons);
+    box.hidden = false;
+    verdict.hidden = true;
+  }
+
+  function cardId() {
+    const fromQuery = new URLSearchParams(location.search).get("c");
+    const raw = (fromQuery || location.hash.replace(/^#/, "")).trim().toLowerCase();
+    const m = raw.match(/^q?(\d{1,3})$/);
+    return m ? "q" + m[1].padStart(3, "0") : raw;
+  }
+
+  function show() {
+    const id = cardId();
+    $("choices").hidden = true;
+    $("verdict").hidden = true;
+    if (!id) {
+      $("label").textContent = "Cyber quiz";
+      $("question").textContent = "Scannez le QR code d'une carte pour afficher sa question.";
+    } else if (Object.prototype.hasOwnProperty.call(QUESTIONS, id)) {
+      $("label").textContent = "Question " + Number(id.slice(1));
+      $("question").textContent = QUESTIONS[id][0];
+      showChoices(QUESTIONS[id][1]);
+    } else {
+      $("label").textContent = "Carte inconnue";
+      $("question").textContent = "Cette carte n'existe pas dans le jeu.";
+    }
+  }
+
+  const canvas = $("rain");
+  function draw() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = window.innerWidth, h = window.innerHeight;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, w, h);
+    const size = Math.max(18, Math.min(30, w / 26));
+    ctx.font = size + 'px "Share Tech Mono", Consolas, "Courier New", monospace';
+    ctx.textBaseline = "top";
+    ctx.fillStyle = "#1fdc3f";
+    ctx.shadowColor = "#00ff3c";
+    ctx.shadowBlur = 7;
+    const cols = Math.ceil(w / (size * 0.55)) + 12;
+    for (let y = -size * 0.4; y < h; y += size * 1.45) {
+      let line = "";
+      while (line.length < cols) {
+        const run = 3 + Math.floor(Math.random() * 20);
+        for (let i = 0; i < run; i++) line += Math.random() < 0.5 ? "0" : "1";
+        line += " ".repeat(1 + Math.floor(Math.random() * 3));
+      }
+      ctx.fillText(line, -Math.random() * size * 4, y);
+    }
+  }
+
+  show();
+  draw();
+  window.addEventListener("hashchange", show);
+  let lastW = window.innerWidth;
+  window.addEventListener("resize", () => { if (window.innerWidth !== lastW) { lastW = window.innerWidth; draw(); } });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+})();
+</script>
+</body>
+</html>
