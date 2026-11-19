@@ -50,12 +50,21 @@
   #verdict { margin: 0; min-height: 1.4em; letter-spacing: .12em; text-transform: uppercase; }
   #verdict.good { color: var(--good); }
   #verdict.bad { color: var(--bad); }
+  #timer { display: flex; align-items: center; gap: 12px; }
+  #timer .track { flex: 1; height: 8px; border: 1px solid var(--rain); border-radius: 4px; overflow: hidden; background: rgba(58, 141, 255, .12); }
+  #timer .fill { height: 100%; width: 100%; background: var(--rain); box-shadow: 0 0 10px var(--glow); transform-origin: left center; }
+  #time { min-width: 3ch; font-size: 1.6rem; line-height: 1; text-align: right; font-variant-numeric: tabular-nums; text-shadow: 0 0 8px var(--glow); }
+  #timer.low .fill { background: var(--bad); box-shadow: 0 0 10px var(--bad); }
+  #timer.low #time { color: var(--bad); text-shadow: 0 0 8px var(--bad); animation: pulse 1s steps(2, start) infinite; }
+  @keyframes pulse { 50% { opacity: .45; } }
+  @media (prefers-reduced-motion: reduce) { #timer.low #time { animation: none; } }
 </style>
 </head>
 <body>
 <canvas id="rain" aria-hidden="true"></canvas>
 <main>
   <div class="label" id="label">CyberRush</div>
+  <div id="timer" hidden role="timer" aria-label="Temps restant"><div class="track"><div class="fill" id="fill"></div></div><span id="time">60</span></div>
   <h1 id="question">Scannez le QR code d'une carte pour afficher sa question.</h1>
   <div id="choices" hidden></div>
   <p id="verdict" hidden aria-live="polite"></p>
@@ -75,9 +84,42 @@
     return a;
   }
 
+  const DURATION = 60;
+  let timerId = null;
+
+  function stopTimer() {
+    if (timerId) { clearInterval(timerId); timerId = null; }
+  }
+
+  function startTimer(onEnd) {
+    stopTimer();
+    const end = Date.now() + DURATION * 1000;
+    const box = $("timer"), fill = $("fill"), time = $("time");
+    box.hidden = false;
+    const tick = () => {
+      const leftMs = Math.max(0, end - Date.now());
+      const left = Math.ceil(leftMs / 1000);
+      time.textContent = String(left);
+      fill.style.transform = "scaleX(" + (leftMs / (DURATION * 1000)) + ")";
+      box.classList.toggle("low", left <= 10);
+      if (leftMs <= 0) { stopTimer(); onEnd(); }
+    };
+    tick();
+    timerId = setInterval(tick, 200);
+  }
+
   function showChoices(choices) {
     const good = choices[0];
     const box = $("choices"), verdict = $("verdict");
+    const reveal = (picked) => {
+      stopTimer();
+      buttons.forEach((x) => { x.disabled = true; if (x.lastChild.textContent === good) x.classList.add("good"); });
+      if (picked && picked.lastChild.textContent !== good) picked.classList.add("bad");
+      const ok = picked && picked.lastChild.textContent === good;
+      verdict.textContent = !picked ? "Temps écoulé" : ok ? "Bonne réponse" : "Mauvaise réponse";
+      verdict.className = ok ? "good" : "bad";
+      verdict.hidden = false;
+    };
     const buttons = shuffled(choices).map((text, i) => {
       const b = document.createElement("button");
       b.type = "button";
@@ -87,19 +129,13 @@
       const label = document.createElement("span");
       label.textContent = text;
       b.append(letter, label);
-      b.addEventListener("click", () => {
-        const ok = text === good;
-        buttons.forEach((x) => { x.disabled = true; if (x.lastChild.textContent === good) x.classList.add("good"); });
-        if (!ok) b.classList.add("bad");
-        verdict.textContent = ok ? "Bonne réponse" : "Mauvaise réponse";
-        verdict.className = ok ? "good" : "bad";
-        verdict.hidden = false;
-      });
+      b.addEventListener("click", () => reveal(b));
       return b;
     });
     box.replaceChildren(...buttons);
     box.hidden = false;
     verdict.hidden = true;
+    startTimer(() => reveal(null));
   }
 
   function cardId() {
@@ -111,6 +147,8 @@
 
   function show() {
     const id = cardId();
+    stopTimer();
+    $("timer").hidden = true;
     $("choices").hidden = true;
     $("verdict").hidden = true;
     if (!id) {
@@ -126,68 +164,104 @@
     }
   }
 
+  // Fond animé : des colonnes de 0 et 1 qui descendent, scintillent, et des traînées de lumière qui pulsent.
   const canvas = $("rain");
-  function draw() {
-    const dpr = window.devicePixelRatio || 1;
-    const w = window.innerWidth, h = window.innerHeight;
-    canvas.width = Math.round(w * dpr);
-    canvas.height = Math.round(h * dpr);
-    const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d");
+  const still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let W = 0, H = 0, size = 16, colW = 15, rowH = 20, rows = 0, cols = [], streaks = [], bgLayer = null;
+
+  function cell(boost) {
+    const bright = Math.random();
+    return { ch: Math.random() < 0.5 ? "0" : "1", hi: bright > 0.94, a: Math.random() < 0.18 ? 0 : Math.min(1, 0.15 + bright * 0.55 + boost) };
+  }
+
+  function setup() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const bg = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.75);
-    bg.addColorStop(0, "#0a2a6b");
-    bg.addColorStop(1, "#010718");
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, w, h);
-
-    const size = Math.max(13, Math.min(20, w / 34));
-    const colW = size * 0.95;
-    const rowH = size * 1.25;
-    const cols = Math.ceil(w / colW) + 1;
-    const rows = Math.ceil(h / rowH) + 1;
-
-    for (let c = 0; c < cols; c++) {
-      if (Math.random() < 0.12) {
-        const x = c * colW + colW / 2;
-        const streak = ctx.createLinearGradient(0, 0, 0, h);
-        const a = 0.12 + Math.random() * 0.22;
-        streak.addColorStop(0, "rgba(40, 120, 255, 0)");
-        streak.addColorStop(0.2 + Math.random() * 0.5, "rgba(60, 150, 255, " + a + ")");
-        streak.addColorStop(1, "rgba(40, 120, 255, 0)");
-        ctx.fillStyle = streak;
-        ctx.fillRect(x - colW * 0.7, 0, colW * 1.4, h);
-      }
+    size = Math.max(13, Math.min(20, W / 34));
+    colW = size * 0.95;
+    rowH = size * 1.25;
+    rows = Math.ceil(H / rowH) + 2;
+    const n = Math.ceil(W / colW) + 1;
+    cols = [];
+    streaks = [];
+    for (let c = 0; c < n; c++) {
+      const boost = Math.random() < 0.15 ? 0.35 : 0;
+      const cells = [];
+      for (let r = 0; r < rows; r++) cells.push(cell(boost));
+      cols.push({ x: c * colW + colW / 2, speed: 0.6 + Math.random() * 2.2, off: Math.random() * rowH, boost, cells });
+      if (Math.random() < 0.12) streaks.push({ x: c * colW + colW / 2, peak: 0.2 + Math.random() * 0.5, a: 0.12 + Math.random() * 0.22, phase: Math.random() * Math.PI * 2, rate: 0.4 + Math.random() * 0.8 });
     }
+    bgLayer = document.createElement("canvas");
+    bgLayer.width = canvas.width; bgLayer.height = canvas.height;
+    const b = bgLayer.getContext("2d");
+    b.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const g = b.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.75);
+    g.addColorStop(0, "#0a2a6b");
+    g.addColorStop(1, "#010718");
+    b.fillStyle = g;
+    b.fillRect(0, 0, W, H);
+  }
 
+  function render(t) {
+    ctx.drawImage(bgLayer, 0, 0, W, H);
+    for (const s of streaks) {
+      const a = s.a * (0.55 + 0.45 * Math.sin(t * s.rate + s.phase));
+      const grad = ctx.createLinearGradient(0, 0, 0, H);
+      grad.addColorStop(0, "rgba(40, 120, 255, 0)");
+      grad.addColorStop(s.peak, "rgba(60, 150, 255, " + a.toFixed(3) + ")");
+      grad.addColorStop(1, "rgba(40, 120, 255, 0)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(s.x - colW * 0.7, 0, colW * 1.4, H);
+    }
     ctx.font = size + 'px "Share Tech Mono", Consolas, "Courier New", monospace';
     ctx.textBaseline = "top";
     ctx.textAlign = "center";
-    for (let c = 0; c < cols; c++) {
-      const colBoost = Math.random() < 0.15 ? 0.35 : 0;
-      for (let r = 0; r < rows; r++) {
-        if (Math.random() < 0.18) continue;
-        const bright = Math.random();
-        const alpha = Math.min(1, 0.15 + bright * 0.55 + colBoost);
-        if (bright > 0.93) {
-          ctx.fillStyle = "rgba(225, 240, 255, " + alpha + ")";
-          ctx.shadowColor = "#6cc0ff";
-          ctx.shadowBlur = 8;
+    for (const col of cols) {
+      for (let r = 0; r < col.cells.length; r++) {
+        const c = col.cells[r];
+        if (!c.a) continue;
+        const y = (r - 1) * rowH + col.off;
+        if (c.hi) {
+          ctx.fillStyle = "rgba(108, 192, 255, " + (c.a * 0.35).toFixed(3) + ")";
+          ctx.fillText(c.ch, col.x, y - 1);
+          ctx.fillStyle = "rgba(225, 240, 255, " + c.a.toFixed(3) + ")";
         } else {
-          ctx.fillStyle = "rgba(70, 150, 255, " + alpha + ")";
-          ctx.shadowBlur = 0;
+          ctx.fillStyle = "rgba(70, 150, 255, " + c.a.toFixed(3) + ")";
         }
-        ctx.fillText(Math.random() < 0.5 ? "0" : "1", c * colW + colW / 2, r * rowH);
+        ctx.fillText(c.ch, col.x, y);
       }
     }
-    ctx.shadowBlur = 0;
+  }
+
+  let last = 0;
+  function step(now) {
+    requestAnimationFrame(step);
+    if (now - last < 33) return;
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    for (const col of cols) {
+      col.off += col.speed * rowH * dt;
+      while (col.off >= rowH) { col.off -= rowH; col.cells.pop(); col.cells.unshift(cell(col.boost)); }
+      if (Math.random() < 0.08) { const c = col.cells[Math.floor(Math.random() * col.cells.length)]; c.ch = c.ch === "0" ? "1" : "0"; }
+    }
+    render(now / 1000);
   }
 
   show();
-  draw();
+  setup();
+  render(0);
+  if (!still) requestAnimationFrame(step);
   window.addEventListener("hashchange", show);
   let lastW = window.innerWidth;
-  window.addEventListener("resize", () => { if (window.innerWidth !== lastW) { lastW = window.innerWidth; draw(); } });
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+  window.addEventListener("resize", () => {
+    if (Math.abs(window.innerWidth - lastW) < 2 && Math.abs(window.innerHeight - H) < 120) return;
+    lastW = window.innerWidth; setup(); render(0);
+  });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => render(0));
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 })();
 </script>
